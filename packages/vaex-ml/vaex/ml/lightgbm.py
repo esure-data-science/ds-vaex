@@ -66,6 +66,8 @@ class LightGBMModel(state.HasState):
     num_boost_round = traitlets.CInt(help='Number of boosting iterations.')
     params = traitlets.Dict(help='parameters to be passed on the to the LightGBM model.')
     prediction_name = traitlets.Unicode(default_value='lightgbm_prediction', help='The name of the virtual column housing the predictions.')
+    init_score = traitlets.Unicode(allow_none=True, default_value=None, help="The name of the initial scores column")
+    weights = traitlets.Unicode(allow_none=True, default_value=None, help="The name of the instance weights column")
 
     def __call__(self, *args):
         data2d = np.stack([np.asarray(arg, np.float64) for arg in args], axis=1)
@@ -104,13 +106,20 @@ class LightGBMModel(state.HasState):
         :param bool verbose_eval: Requires at least one item in *valid_sets*.
             If *verbose_eval* is True then the evaluation metric on the validation set is printed at each boosting stage.
         """
-
-        dtrain = lightgbm.Dataset(df[self.features].values, df[self.target].to_numpy())
+        weights = df[self.weights].to_numpy() if self.weights is not None else None
+        init_score = df[self.init_score].to_numpy() if self.init_score is not None else None
+        dtrain = lightgbm.Dataset(df[self.features].values, df[self.target].to_numpy(), weight=weights, init_score=init_score)
         if valid_sets is not None:
             for i, item in enumerate(valid_sets):
                 valid_sets[i] = lightgbm.Dataset(item[self.features].values, item[self.target].to_numpy())
         else:
             valid_sets = ()
+        
+        callbacks = []
+        if verbose_eval:
+            callbacks.append(lightgbm.log_evaluation())
+        if evals_result is not None:
+            callbacks.append(lightgbm.record_evaluation(evals_result))
 
         self.booster = lightgbm.train(params=self.params,
                                       train_set=dtrain,
@@ -118,8 +127,7 @@ class LightGBMModel(state.HasState):
                                       valid_sets=valid_sets,
                                       valid_names=valid_names,
                                       early_stopping_rounds=early_stopping_rounds,
-                                      evals_result=evals_result,
-                                      verbose_eval=verbose_eval,
+                                      callbacks=callbacks,
                                       **kwargs)
 
     def predict(self, df, **kwargs):
