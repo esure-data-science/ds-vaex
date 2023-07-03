@@ -106,12 +106,18 @@ class LightGBMModel(state.HasState):
         :param bool verbose_eval: Requires at least one item in *valid_sets*.
             If *verbose_eval* is True then the evaluation metric on the validation set is printed at each boosting stage.
         """
-        weights = df[self.weights].to_numpy() if self.weights is not None else None
-        init_score = df[self.init_score].to_numpy() if self.init_score is not None else None
-        dtrain = lightgbm.Dataset(df[self.features].values, df[self.target].to_numpy(), weight=weights, init_score=init_score)
+        dtrain = lightgbm.Dataset(df[self.features].values, df[self.target].to_numpy())
+        if self.weights is not None:
+            dtrain.set_weight(df[self.weights].to_numpy())
+        if self.init_score is not None:
+            dtrain.set_init_score(df[self.init_score].to_numpy())
         if valid_sets is not None:
             for i, item in enumerate(valid_sets):
-                valid_sets[i] = lightgbm.Dataset(item[self.features].values, item[self.target].to_numpy())
+                valid_sets[i] = lightgbm.Dataset(item[self.features].values, item[self.target].to_numpy(), reference=dtrain)
+                if self.weights is not None:
+                    valid_sets[i].set_weight(item[self.weights].to_numpy())
+                if self.init_score is not None:
+                    valid_sets[i].set_init_score(item[self.init_score].to_numpy())
         else:
             valid_sets = ()
         
